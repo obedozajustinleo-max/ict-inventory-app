@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1044116340598",
+    "project_id": "ict-equipment-inventory-9e52c",
+    "storage_bucket": "ict-equipment-inventory-9e52c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1044116340598:android:164b03f82521779aa64457",
+        "android_client_info": {
+          "package_name": "com.example.ict_inventory_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA0fFpu2UpgKDNEqqUj8D-bJI1YM68DExY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
