@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for Firebase, HTTP requests, and Google Sheets sync -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Optional: include if your QR scanner screen uses the camera -->
+    <!-- <uses-permission android:name="android.permission.CAMERA"/> -->
+
     <application
         android:label="ict_inventory_app"
         android:name="${applicationName}"

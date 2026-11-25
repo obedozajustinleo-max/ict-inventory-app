@@ -5,12 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'providers/inventory_provider.dart';
+import 'screens/auth_screen.dart';
 import 'screens/dashboard_screen.dart';
+import 'screens/employee_equipment_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  // Enable Firestore offline persistence explicitly across platforms
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
   );
@@ -41,108 +42,67 @@ class AuthGate extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+      builder: (context, authSnap) {
+        if (authSnap.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        if (snapshot.data == null) {
-          return const LoginScreen();
+
+        final user = authSnap.data;
+        if (user == null) {
+          return const AuthScreen();
         }
-        return ChangeNotifierProvider(
-          create: (_) => InventoryProvider(),
-          child: const DashboardScreen(),
+
+        return StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .snapshots(),
+          builder: (context, userDocSnap) {
+            if (userDocSnap.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            final data = userDocSnap.data?.data() as Map<String, dynamic>?;
+            final isNewlyCreated =
+                user.metadata.creationTime != null &&
+                DateTime.now()
+                        .difference(user.metadata.creationTime!)
+                        .inSeconds <
+                    15;
+
+            if (data == null && isNewlyCreated) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            final role = (data?['role'] ?? 'ictu')
+                .toString()
+                .trim()
+                .toLowerCase();
+            final storedName = (data?['fullName'] ?? '').toString().trim();
+            final resolvedName = storedName.isNotEmpty
+                ? storedName
+                : user.displayName;
+
+            if (role == 'employee') {
+              return EmployeeEquipmentScreen(
+                user: user,
+                employeeFullName: resolvedName,
+              );
+            }
+
+            return ChangeNotifierProvider(
+              create: (_) => InventoryProvider(),
+              child: const DashboardScreen(),
+            );
+          },
         );
       },
-    );
-  }
-}
-
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
-
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _loading = false;
-  String? _error;
-
-  Future<void> _signIn() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
-    } on FirebaseAuthException catch (e) {
-      setState(() => _error = e.message ?? 'Sign-in failed.');
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('ICT Inventory Sign In')),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: _emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Staff Email',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Password',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(_error!, style: const TextStyle(color: Colors.red)),
-            ],
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: _loading ? null : _signIn,
-                child: _loading
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Sign In'),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

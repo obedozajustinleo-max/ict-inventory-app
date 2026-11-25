@@ -13,6 +13,15 @@ class EquipmentDetailScreen extends StatelessWidget {
 
   const EquipmentDetailScreen({super.key, required this.itemId});
 
+  Color _conditionColor(String condition) {
+    return switch (condition) {
+      'Working' => Colors.green,
+      'For Repair' => Colors.orange,
+      'Defective' => Colors.red,
+      _ => Colors.blueGrey,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final service = InventoryService();
@@ -32,10 +41,13 @@ class EquipmentDetailScreen extends StatelessWidget {
         }
 
         final item = snapshot.data!;
+        final titleProp = item.propertyNumber.isEmpty
+            ? item.equipmentType
+            : item.propertyNumber;
 
         return Scaffold(
           appBar: AppBar(
-            title: Text(item.propertyNumber),
+            title: Text(titleProp),
             actions: [
               IconButton(
                 tooltip: 'Edit',
@@ -63,22 +75,82 @@ class EquipmentDetailScreen extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             children: [
               Text(
-                '${item.equipmentType} — ${item.brandModel}',
+                '${item.equipmentType}${item.year.isNotEmpty ? " (${item.year})" : ""} — ${item.brandModel}',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
-              Text('Serial Number: ${item.serialNumber}'),
-              Text('Property Number: ${item.propertyNumber}'),
+              Text('Division: ${item.division}'),
+              if (item.year.isNotEmpty) Text('Year: ${item.year}'),
+              Text(
+                'Serial Number: ${item.serialNumber.isEmpty ? "—" : item.serialNumber}',
+              ),
+              Text(
+                'Property Number: ${item.propertyNumber.isEmpty ? "—" : item.propertyNumber}',
+              ),
               Text(
                 'Date Acquired: ${DateFormatter.formatShort(item.dateAcquired)}',
               ),
               Text(
                 'Warranty Until: ${DateFormatter.formatShort(item.warrantyEndDate)}',
               ),
-              Text('Location: ${item.location}'),
+              Text('Location / Section: ${item.location}'),
               Text('Responsible Personnel: ${item.responsiblePersonnel}'),
+              if (item.assignedUserEmail != null &&
+                  item.assignedUserEmail!.trim().isNotEmpty)
+                Text('Assigned Account: ${item.assignedUserEmail}'),
               Text('Condition: ${item.condition}'),
               Text('Remarks: ${item.remarks.isEmpty ? "—" : item.remarks}'),
+
+              if (item.components.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Text(
+                  'Tied Peripherals & Components (${item.components.length})',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                ...item.components.map((comp) {
+                  final color = _conditionColor(comp.condition);
+                  final details = <String>[
+                    if (comp.brandModel.isNotEmpty) 'Model: ${comp.brandModel}',
+                    if (comp.year.isNotEmpty) 'Year: ${comp.year}',
+                    if (comp.serialNumber.isNotEmpty)
+                      'SN: ${comp.serialNumber}',
+                    if (comp.propertyNumber.isNotEmpty)
+                      'Prop #: ${comp.propertyNumber}',
+                    if (comp.dateAcquired.isNotEmpty)
+                      'Acquired: ${comp.dateAcquired}',
+                    if (comp.warrantyPeriod.isNotEmpty)
+                      'Warranty: ${comp.warrantyPeriod}',
+                    if (comp.remarks.isNotEmpty) 'Remarks: ${comp.remarks}',
+                  ];
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: const Icon(Icons.memory),
+                      title: Text(
+                        comp.componentType.isEmpty
+                            ? 'Peripheral'
+                            : comp.componentType,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text(
+                        details.isEmpty
+                            ? 'No extra details'
+                            : details.join('\n'),
+                      ),
+                      trailing: Text(
+                        comp.condition,
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+
               const SizedBox(height: 16),
 
               if (item.serialPhotoUrl != null ||

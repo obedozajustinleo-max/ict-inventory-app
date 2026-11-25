@@ -25,24 +25,31 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
 
   late List<String> _divisionOptions;
   late List<String> _locationOptions;
+  late List<String> _equipmentTypeOptions;
   late String _division;
   late String _equipmentType;
   late String _condition;
   late String _location;
-  late DateTime _dateAcquired;
+  DateTime? _dateAcquired;
   DateTime? _warrantyEndDate;
 
+  late final TextEditingController _yearCtrl;
   late final TextEditingController _brandModelCtrl;
   late final TextEditingController _serialCtrl;
   late final TextEditingController _propertyCtrl;
   late final TextEditingController _personnelCtrl;
+  late final TextEditingController _assignedEmailCtrl;
   late final TextEditingController _remarksCtrl;
+
+  late List<EquipmentComponent> _components;
 
   File? _newSerialPhoto;
   File? _newPropertyPhoto;
   bool _saving = false;
 
   bool get _isEditing => widget.existingItem != null;
+  bool get _supportsComponents =>
+      _equipmentType.toLowerCase().contains('desktop');
 
   @override
   void initState() {
@@ -63,28 +70,52 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
       _locationOptions.insert(0, item.location);
     }
 
+    _equipmentTypeOptions = List<String>.from(AppConstants.equipmentTypes);
+    if (!_equipmentTypeOptions.any(
+      (t) => t.toLowerCase().contains('desktop'),
+    )) {
+      _equipmentTypeOptions.insert(0, 'Desktop Set');
+    }
+    if (item != null &&
+        item.equipmentType.trim().isNotEmpty &&
+        !_equipmentTypeOptions.contains(item.equipmentType)) {
+      _equipmentTypeOptions.insert(0, item.equipmentType);
+    }
+
     _division = item?.division ?? _divisionOptions.first;
-    _equipmentType = item?.equipmentType ?? AppConstants.equipmentTypes.first;
+    _equipmentType = item?.equipmentType ?? _equipmentTypeOptions.first;
     _condition = item?.condition ?? AppConstants.conditions.first;
     _location = item?.location ?? _locationOptions.first;
-    _dateAcquired = item?.dateAcquired ?? DateTime.now();
+    _dateAcquired = item?.dateAcquired;
     _warrantyEndDate = item?.warrantyEndDate;
 
+    final initialYear = (item?.year.trim().isNotEmpty == true)
+        ? item!.year.trim()
+        : (_dateAcquired != null ? _dateAcquired!.year.toString() : '');
+
+    _yearCtrl = TextEditingController(text: initialYear);
     _brandModelCtrl = TextEditingController(text: item?.brandModel ?? '');
     _serialCtrl = TextEditingController(text: item?.serialNumber ?? '');
     _propertyCtrl = TextEditingController(text: item?.propertyNumber ?? '');
     _personnelCtrl = TextEditingController(
       text: item?.responsiblePersonnel ?? '',
     );
+    _assignedEmailCtrl = TextEditingController(
+      text: item?.assignedUserEmail ?? '',
+    );
     _remarksCtrl = TextEditingController(text: item?.remarks ?? '');
+
+    _components = item?.components.map((c) => c.copyWith()).toList() ?? [];
   }
 
   @override
   void dispose() {
+    _yearCtrl.dispose();
     _brandModelCtrl.dispose();
     _serialCtrl.dispose();
     _propertyCtrl.dispose();
     _personnelCtrl.dispose();
+    _assignedEmailCtrl.dispose();
     _remarksCtrl.dispose();
     super.dispose();
   }
@@ -112,9 +143,10 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
   }
 
   Future<void> _pickDate({required bool isWarranty}) async {
+    final baseDate = _dateAcquired ?? DateTime.now();
     final initial = isWarranty
-        ? (_warrantyEndDate ?? _dateAcquired.add(const Duration(days: 365)))
-        : _dateAcquired;
+        ? (_warrantyEndDate ?? baseDate.add(const Duration(days: 365)))
+        : baseDate;
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -127,6 +159,31 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
         _warrantyEndDate = picked;
       } else {
         _dateAcquired = picked;
+        if (_yearCtrl.text.trim().isEmpty) {
+          _yearCtrl.text = picked.year.toString();
+        }
+      }
+    });
+  }
+
+  Future<void> _openComponentDialog({
+    EquipmentComponent? existing,
+    int? index,
+  }) async {
+    final result = await showDialog<EquipmentComponent>(
+      context: context,
+      builder: (_) => _PeripheralDialog(
+        existing: existing,
+        defaultYear: _yearCtrl.text.trim(),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+    setState(() {
+      if (index != null && index >= 0 && index < _components.length) {
+        _components[index] = result;
+      } else {
+        _components.add(result);
       }
     });
   }
@@ -175,10 +232,42 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
             .timeout(const Duration(seconds: 30));
       }
 
+      final finalComponents = List<EquipmentComponent>.from(_components);
+      if (_supportsComponents && finalComponents.isNotEmpty) {
+        final hasSystemUnit = finalComponents.any(
+          (c) => c.componentType.toLowerCase().contains('system unit'),
+        );
+        if (!hasSystemUnit && _brandModelCtrl.text.trim().isNotEmpty) {
+          finalComponents.insert(
+            0,
+            EquipmentComponent(
+              componentType: 'System Unit',
+              year: _yearCtrl.text.trim(),
+              brandModel: _brandModelCtrl.text.trim(),
+              serialNumber: _serialCtrl.text.trim(),
+              propertyNumber: _propertyCtrl.text.trim(),
+              dateAcquired: _dateAcquired != null
+                  ? _dateAcquired!.toIso8601String().split('T').first
+                  : '',
+              warrantyPeriod: _warrantyEndDate != null
+                  ? _warrantyEndDate!.toIso8601String().split('T').first
+                  : '',
+              condition: _condition,
+              remarks: _remarksCtrl.text.trim(),
+            ),
+          );
+        }
+      }
+
+      final resolvedYear = _yearCtrl.text.trim().isNotEmpty
+          ? _yearCtrl.text.trim()
+          : (_dateAcquired != null ? _dateAcquired!.year.toString() : '');
+
       final draft = EquipmentItem(
         id: itemId,
         division: _division,
         equipmentType: _equipmentType,
+        year: resolvedYear,
         brandModel: _brandModelCtrl.text,
         serialNumber: _serialCtrl.text,
         propertyNumber: _propertyCtrl.text,
@@ -186,10 +275,14 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
         warrantyEndDate: _warrantyEndDate,
         location: _location,
         responsiblePersonnel: _personnelCtrl.text,
+        assignedUserEmail: _assignedEmailCtrl.text.trim().isEmpty
+            ? null
+            : _assignedEmailCtrl.text.trim(),
         condition: _condition,
         remarks: _remarksCtrl.text,
         serialPhotoUrl: serialUrl,
         propertyTagPhotoUrl: propertyUrl,
+        components: _supportsComponents ? finalComponents : const [],
         isArchived: widget.existingItem?.isArchived ?? false,
         createdBy: widget.existingItem?.createdBy ?? '',
         updatedBy: '',
@@ -258,7 +351,7 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
                 labelText: 'Equipment Type',
                 border: OutlineInputBorder(),
               ),
-              items: AppConstants.equipmentTypes
+              items: _equipmentTypeOptions
                   .map(
                     (t) => DropdownMenuItem(
                       value: t,
@@ -268,6 +361,15 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
                   .toList(),
               onChanged: (val) =>
                   setState(() => _equipmentType = val ?? _equipmentType),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _yearCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Year (Release / Acquisition)',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -286,8 +388,6 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
                 labelText: 'Serial Number',
                 border: OutlineInputBorder(),
               ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -296,8 +396,6 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
                 labelText: 'Property Number',
                 border: OutlineInputBorder(),
               ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
             const SizedBox(height: 12),
             Row(
@@ -330,7 +428,7 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
               initialValue: _location,
               isExpanded: true,
               decoration: const InputDecoration(
-                labelText: 'Location',
+                labelText: 'Location / Section',
                 border: OutlineInputBorder(),
               ),
               items: _locationOptions
@@ -352,6 +450,15 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
               ),
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Required' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _assignedEmailCtrl,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Assigned Employee Email (Optional, for MR Portal)',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
@@ -381,6 +488,66 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
+
+            if (_supportsComponents) ...[
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Desktop Set Peripherals (${_components.length})',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _openComponentDialog(),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add Peripheral'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_components.isEmpty)
+                const Text(
+                  'No peripherals added yet. Tap "Add Peripheral" for System Unit, Monitor, UPS, Mouse, or Keyboard.',
+                )
+              else
+                ...List.generate(_components.length, (idx) {
+                  final comp = _components[idx];
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      title: Text(
+                        '${comp.componentType}${comp.year.isNotEmpty ? " (${comp.year})" : ""} — ${comp.brandModel.isEmpty ? "—" : comp.brandModel}',
+                      ),
+                      subtitle: Text(
+                        'SN: ${comp.serialNumber.isEmpty ? "—" : comp.serialNumber} • '
+                        'Prop #: ${comp.propertyNumber.isEmpty ? "—" : comp.propertyNumber} • '
+                        '${comp.condition}',
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: 'Edit Peripheral',
+                            icon: const Icon(Icons.edit_outlined),
+                            onPressed: () => _openComponentDialog(
+                              existing: comp,
+                              index: idx,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Remove Peripheral',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () =>
+                                setState(() => _components.removeAt(idx)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+            ],
+
             const SizedBox(height: 16),
             Row(
               children: [
@@ -411,6 +578,140 @@ class _EquipmentFormScreenState extends State<EquipmentFormScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PeripheralDialog extends StatefulWidget {
+  final EquipmentComponent? existing;
+  final String defaultYear;
+
+  const _PeripheralDialog({this.existing, required this.defaultYear});
+
+  @override
+  State<_PeripheralDialog> createState() => _PeripheralDialogState();
+}
+
+class _PeripheralDialogState extends State<_PeripheralDialog> {
+  late final TextEditingController _typeCtrl;
+  late final TextEditingController _yearCtrl;
+  late final TextEditingController _modelCtrl;
+  late final TextEditingController _serialCtrl;
+  late final TextEditingController _propCtrl;
+  late final TextEditingController _remarksCtrl;
+  late String _compCondition;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existing;
+    _typeCtrl = TextEditingController(
+      text: existing?.componentType ?? 'System Unit',
+    );
+    _yearCtrl = TextEditingController(
+      text: existing?.year.isNotEmpty == true
+          ? existing!.year
+          : widget.defaultYear,
+    );
+    _modelCtrl = TextEditingController(text: existing?.brandModel ?? '');
+    _serialCtrl = TextEditingController(text: existing?.serialNumber ?? '');
+    _propCtrl = TextEditingController(text: existing?.propertyNumber ?? '');
+    _remarksCtrl = TextEditingController(text: existing?.remarks ?? '');
+    _compCondition = existing?.condition ?? 'Working';
+  }
+
+  @override
+  void dispose() {
+    _typeCtrl.dispose();
+    _yearCtrl.dispose();
+    _modelCtrl.dispose();
+    _serialCtrl.dispose();
+    _propCtrl.dispose();
+    _remarksCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        widget.existing == null ? 'Add Peripheral' : 'Edit Peripheral',
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _typeCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Component (e.g., System Unit, Monitor, UPS)',
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _yearCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Year'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _modelCtrl,
+              decoration: const InputDecoration(labelText: 'Brand / Model'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _serialCtrl,
+              decoration: const InputDecoration(labelText: 'Serial Number'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _propCtrl,
+              decoration: const InputDecoration(labelText: 'Property Number'),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: AppConstants.conditions.contains(_compCondition)
+                  ? _compCondition
+                  : AppConstants.conditions.first,
+              decoration: const InputDecoration(labelText: 'Condition'),
+              items: AppConstants.conditions
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .toList(),
+              onChanged: (v) => setState(() => _compCondition = v ?? 'Working'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _remarksCtrl,
+              decoration: const InputDecoration(labelText: 'Remarks'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final compType = _typeCtrl.text.trim();
+            if (compType.isEmpty) return;
+            Navigator.pop(
+              context,
+              EquipmentComponent(
+                componentType: compType,
+                year: _yearCtrl.text.trim(),
+                brandModel: _modelCtrl.text.trim(),
+                serialNumber: _serialCtrl.text.trim(),
+                propertyNumber: _propCtrl.text.trim(),
+                condition: _compCondition,
+                remarks: _remarksCtrl.text.trim(),
+              ),
+            );
+          },
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }
